@@ -5,9 +5,9 @@ workflows:
     environment:
       ios_signing:
         provisioning_profiles:
-          - AlightMotion_AdHoc
+          - CM_PROVISIONING_PROFILE   # ← variable name, not file
         certificates:
-          - Apple_Development
+          - CM_CERTIFICATE            # ← variable name
     scripts:
       - xcodebuild -scheme AlightMotion -configuration Release -destination 'generic/platform=iOS' -derivedDataPath build
       - xcodebuild -exportArchive -archivePath build/AlightMotion.xcarchive -exportPath build -exportOptionsPlist ExportOptions.plist
