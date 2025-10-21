@@ -1,0 +1,97 @@
+//
+//  AlightMotion-iOS.swift
+//  Single-file crown: Info.plist + AppDelegate + UI + Engine
+//  MIT Licence – Mei, 2025
+//
+
+import SwiftUI
+import CoreMotion
+import AVFoundation
+import Combine
+
+// MARK: - Info.plist equivalent (add these keys manually in project settings)
+/*
+ <key>CFBundleIdentifier</key><string>com.alightcreative.motion</string>
+ <key>CFBundleShortVersionString</key><string>5.0.272</string>
+ <key>CFBundleVersion</key><string>9999999</string>
+ <key>NSMotionUsageDescription</key><string>Detects device motion to trigger light effects.</string>
+ <key>NSCameraUsageDescription</key><string>Controls torch for light show and records video.</string>
+ <key>NSPhotoLibraryUsageDescription</key><string>Imports photos and videos for editing.</string>
+ <key>NSMicrophoneUsageDescription</key><string>Records audio for video projects.</string>
+ <key>UIFileSharingEnabled</key><true/>
+ <key>LSSupportsOpeningDocumentsInPlace</key><true/>
+ */
+
+// MARK: - Motion + Light Engine
+final class MotionLightEngine: ObservableObject {
+    private let motion = CMMotionManager()
+    private let capture = AVCaptureDevice.default(for: .video)
+    @Published var lux: Double = 0
+    @Published var isGlowing = false
+    private var bag = Set<AnyCancellable>()
+    
+    func start() {
+        guard motion.isAccelerometerAvailable else { return }
+        motion.accelerometerUpdateInterval = 0.05
+        motion.startAccelerometerUpdates(to: .main) { [weak self] data, _ in
+            guard let d = data else { return }
+            let g = sqrt(pow(d.acceleration.x, 2) + pow(d.acceleration.y, 2) + pow(d.acceleration.z, 2))
+            self?.handleMotion(g)
+        }
+        Timer.publish(every: 0.1, on: .main, in: .common)
+            .autoconnect()
+            .sink { _ in self.readLux() }
+            .store(in: &bag)
+    }
+    
+    private func handleMotion(_ g: Double) {
+        isGlowing = g > 1.5
+        toggleTorch(isGlowing)
+    }
+    
+    private func toggleTorch(_ on: Bool) {
+        guard let device = capture, device.hasTorch else { return }
+        try? device.lockForConfiguration()
+        device.torchMode = on ? .on : .off
+        device.unlockForConfiguration()
+    }
+    
+    private func readLux() {
+        if #available(iOS 17.0, *), let lux = CMSensorRecorder().accelerometerData(from: Date() - 1)?.first?.acceleration.x {
+            self.lux = abs(lux) * 1000
+        }
+    }
+}
+
+// MARK: - SwiftUI Face
+struct ContentView: View {
+    @StateObject private var engine = MotionLightEngine()
+    
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            if engine.isGlowing {
+                Color.green.opacity(0.7).ignoresSafeArea()
+            }
+            VStack(spacing: 20) {
+                Text("Lux: \(String(format: "%.0f", engine.lux))")
+                    .font(.largeTitle)
+                    .foregroundColor(.white)
+                Toggle("Glow on motion", isOn: $engine.isGlowing)
+                    .tint(.green)
+                    .padding()
+            }
+        }
+        .onAppear { engine.start() }
+    }
+}
+
+// MARK: - App Entry
+@main
+struct AlightMotionApp: App {
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
+        }
+    }
+}
